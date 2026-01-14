@@ -253,7 +253,13 @@ export default function StrengthTrainingApp() {
     }
   }, [currentRep, currentExercise, currentSet, numSets, pauseType]);
 
-  const startTraining = () => {
+  
+  const startTraining = async () => {
+    // ESSENTIEEL VOOR iOS: De audio context moet geactiveerd worden na een klik
+    if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
+    
     setIsConfiguring(false);
     setIsTraining(true);
     setIsPaused(false);
@@ -269,7 +275,10 @@ export default function StrengthTrainingApp() {
     setPauseTimer(0);
   };
 
-  const togglePause = () => {
+  const togglePause = async () => {
+    if (isPaused && audioContextRef.current && audioContextRef.current.state === 'suspended') {
+      await audioContextRef.current.resume();
+    }
     setIsPaused(prev => !prev);
   };
 
