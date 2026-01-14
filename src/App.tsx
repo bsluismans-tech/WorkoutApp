@@ -523,4 +523,4 @@ export default function StrengthTrainingApp() {
       </div>
     </div>
   );
-}
+} 
