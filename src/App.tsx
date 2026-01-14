@@ -1,6 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { Play, Pause, Square, SkipForward, SkipBack, Dumbbell, Plus, Minus, Trophy } from 'lucide-react';
 
+// --- Types ---
+interface ConfettiPiece {
+  x: number;
+  y: number;
+  size: number;
+  speedY: number;
+  speedX: number;
+  color: string;
+  rotation: number;
+  rotationSpeed: number;
+}
+
+type PauseType = 'exercise' | 'set' | null;
+
+// --- Constants ---
 const EXERCISES = [
   { name: 'Clamshell Left', reps: 15, duration: 4, type: 'reps' },
   { name: 'Clamshell Right', reps: 15, duration: 4, type: 'reps' },
@@ -44,16 +59,15 @@ export default function StrengthTrainingApp() {
   const [currentSet, setCurrentSet] = useState(0);
   const [currentExercise, setCurrentExercise] = useState(0);
   const [currentRep, setCurrentRep] = useState(0);
-  const [repPhase, setRepPhase] = useState('up');
+  const [repPhase, setRepPhase] = useState<'up' | 'down'>('up');
   const [phaseTimer, setPhaseTimer] = useState(0);
   const [secondInPhase, setSecondInPhase] = useState(0);
   const [holdTimer, setHoldTimer] = useState(0);
-  const [pauseType, setPauseType] = useState(null);
+  const [pauseType, setPauseType] = useState<PauseType>(null);
   const [pauseTimer, setPauseTimer] = useState(0);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
 
   useEffect(() => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -64,7 +78,6 @@ export default function StrengthTrainingApp() {
       }
     };
   }, []);
-
 
   const playTone = (frequency: number, duration: number = 0.08, volume: number = 0.12) => {
     const ctx = audioContextRef.current;
@@ -87,9 +100,6 @@ export default function StrengthTrainingApp() {
   };
 
   const playCheer = () => {
-    const ctx = audioContextRef.current;
-    if (!ctx) return;
-
     [523, 659, 784, 1047].forEach((freq, i) => {
       setTimeout(() => playTone(freq, 0.2, 0.2), i * 150);
     });
@@ -100,10 +110,12 @@ export default function StrengthTrainingApp() {
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    const confetti = [];
+    const confetti: ConfettiPiece[] = [];
     const colors = ['#3B82F6', '#06B6D4', '#10B981', '#F59E0B', '#EF4444'];
     
     for (let i = 0; i < 150; i++) {
@@ -119,7 +131,7 @@ export default function StrengthTrainingApp() {
       });
     }
 
-    let animationId;
+    let animationId: number;
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
@@ -208,7 +220,7 @@ export default function StrengthTrainingApp() {
       const volume = secondInPhase === 1 ? 0.15 : secondInPhase === 2 ? 0.09 : 0.08;
       playTone(400, 0.08, volume);
     }
-  }, [secondInPhase, isTraining, isPaused, pauseType, repPhase]);
+  }, [secondInPhase, isTraining, isPaused, pauseType, repPhase, currentExercise]);
 
   useEffect(() => {
     const exercise = EXERCISES[currentExercise];
@@ -269,8 +281,6 @@ export default function StrengthTrainingApp() {
   };
 
   const skipToNext = () => {
-    const exercise = EXERCISES[currentExercise];
-    
     if (currentExercise < EXERCISES.length - 1) {
       setCurrentExercise(prev => prev + 1);
       setCurrentRep(0);
@@ -304,7 +314,7 @@ export default function StrengthTrainingApp() {
     }
   };
 
-  const formatTime = (seconds) => {
+  const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -523,4 +533,4 @@ export default function StrengthTrainingApp() {
       </div>
     </div>
   );
-} 
+}
