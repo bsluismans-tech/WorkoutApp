@@ -68,6 +68,7 @@ export default function StrengthTrainingApp() {
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const silentVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -253,13 +254,34 @@ export default function StrengthTrainingApp() {
     }
   }, [currentRep, currentExercise, currentSet, numSets, pauseType]);
 
-  
+
+
   const startTraining = async () => {
-    // ESSENTIEEL VOOR iOS: De audio context moet geactiveerd worden na een klik
+    // 1. Hervat de AudioContext
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
       await audioContextRef.current.resume();
     }
+
+    // 2. iOS Silent Mode Hack: Speel een onzichtbare, lege video af
+    if (!silentVideoRef.current) {
+      const video = document.createElement('video');
+      video.setAttribute('loop', '');
+      video.setAttribute('playsinline', '');
+      video.muted = false; // Moet niet muted zijn om het kanaal te openen
+      
+      // Een extreem kort, stil base64 mp4 fragment
+      video.src = 'data:video/mp4;base64,AAAAHGZ0eXBpc29tAAAAAGlzb21hdmMxbWV0YQAAACRocmRyAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcY3mN0AAAAAAQAAAAEAAAABAAAAAQAAAAEAAAAB';
+      
+      silentVideoRef.current = video;
+    }
     
+    try {
+      await silentVideoRef.current.play();
+    } catch (e) {
+      console.log("Silent mode bypass failed", e);
+    }
+
+    // Rest van je bestaande startTraining code...
     setIsConfiguring(false);
     setIsTraining(true);
     setIsPaused(false);
