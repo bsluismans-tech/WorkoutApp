@@ -69,6 +69,7 @@ export default function StrengthTrainingApp() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const silentVideoRef = useRef<HTMLVideoElement | null>(null);
+  const wakeLockRef = useRef<any>(null);
 
   // --- Progress Calculations ---
   const calculateSingleSetDuration = () => {
@@ -118,6 +119,50 @@ export default function StrengthTrainingApp() {
     };
   }, []);
 
+  // --- WAKE LOCK EFFECT ---
+  useEffect(() => {
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator && isTraining && !isCompleted && !wakeLockRef.current) {
+        try {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        } catch (err) {
+          console.log('Wake Lock request failed:', err);
+        }
+      }
+    };
+
+    const releaseWakeLock = async () => {
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release();
+          wakeLockRef.current = null;
+        } catch (err) {
+          console.log('Wake Lock release failed:', err);
+        }
+      }
+    };
+
+    if (isTraining && !isCompleted) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isTraining && !isCompleted) {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      releaseWakeLock();
+    };
+  }, [isTraining, isCompleted]);
+
+  // --- AUDIO FUNCTIES ---
   const playTone = (frequency: number, duration: number = 0.08, volume: number = 0.12) => {
     const ctx = audioContextRef.current;
     if (!ctx || ctx.state === 'suspended') return;
@@ -138,6 +183,14 @@ export default function StrengthTrainingApp() {
     [523, 659, 784, 1047].forEach((freq, i) => {
       setTimeout(() => playTone(freq, 0.2, 0.2), i * 150);
     });
+  };
+
+  // NIEUW: Geluid voor einde van oefening
+  const playExerciseComplete = () => {
+    // Een vrolijk 'succes' akkoordje (C Majeur arpeggio)
+    playTone(523.25, 0.1, 0.15); // C5
+    setTimeout(() => playTone(659.25, 0.1, 0.15), 100); // E5
+    setTimeout(() => playTone(783.99, 0.2, 0.15), 200); // G5
   };
 
   useEffect(() => {
@@ -180,7 +233,7 @@ export default function StrengthTrainingApp() {
     return () => cancelAnimationFrame(animationId);
   }, [isCompleted]);
 
-  // --- MAIN TRAINING LOOP (BUG FIX HERE) ---
+  // --- MAIN TRAINING LOOP ---
   useEffect(() => {
     if (!isTraining || isPaused) return;
 
@@ -199,14 +252,14 @@ export default function StrengthTrainingApp() {
             return prev + 1;
           });
         } else {
-          // Rep Logic - Nu veilig buiten de setter functie
+          // Rep Logic
           if (phaseTimer <= 1) {
              if (repPhase === 'up') {
                 setRepPhase('down');
                 setPhaseTimer(3);
                 setSecondInPhase(0);
              } else {
-                setCurrentRep(prev => prev + 1); // Wordt nu gegarandeerd 1x uitgevoerd
+                setCurrentRep(prev => prev + 1);
                 setRepPhase('up');
                 setPhaseTimer(1);
                 setSecondInPhase(0);
@@ -220,7 +273,6 @@ export default function StrengthTrainingApp() {
     }, 1000);
 
     return () => clearInterval(interval);
-  // We voegen phaseTimer toe aan dependencies zodat we de huidige waarde veilig kunnen lezen
   }, [isTraining, isPaused, pauseType, repPhase, currentExercise, holdTimer, phaseTimer]);
 
   useEffect(() => {
@@ -237,6 +289,8 @@ export default function StrengthTrainingApp() {
   useEffect(() => {
     const exercise = EXERCISES[currentExercise];
     if (currentRep >= exercise.reps && !pauseType) {
+      playExerciseComplete(); // GELUID BIJ VOLTOOIEN OEFENING
+
       if (currentExercise < EXERCISES.length - 1) {
         setPauseType('exercise'); setPauseTimer(EXERCISE_PAUSE); setCurrentExercise(prev => prev + 1);
         setCurrentRep(0); setRepPhase('up'); setPhaseTimer(1); setSecondInPhase(0); setHoldTimer(0);
@@ -251,14 +305,16 @@ export default function StrengthTrainingApp() {
 
   const startTraining = async () => {
     if (audioContextRef.current && audioContextRef.current.state === 'suspended') { await audioContextRef.current.resume(); }
-    if (!silentVideoRef.current) {
-      const video = document.createElement('video');
-      video.setAttribute('loop', ''); video.setAttribute('playsinline', '');
-      video.muted = false;
-      video.src = 'data:video/mp4;base64,AAAAHGZ0eXBpc29tAAAAAGlzb21hdmMxbWV0YQAAACRocmRyAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcY3mN0AAAAAAQAAAAEAAAABAAAAAQAAAAEAAAAB';
-      silentVideoRef.current = video;
+    
+    // FIX VOOR SILENT MODE: Play direct op de ref die in de JSX staat
+    if (silentVideoRef.current) {
+        try { 
+            await silentVideoRef.current.play(); 
+        } catch (e) { 
+            console.log("Silent mode bypass failed", e); 
+        }
     }
-    try { await silentVideoRef.current.play(); } catch (e) { console.log("Silent mode bypass failed", e); }
+
     setIsConfiguring(false); setIsTraining(true); setIsPaused(false); setIsCompleted(false);
     setCurrentSet(0); setCurrentExercise(0); setCurrentRep(0); setRepPhase('up'); setPhaseTimer(1); setSecondInPhase(0); setHoldTimer(0); setPauseType(null); setPauseTimer(0);
   };
@@ -347,6 +403,20 @@ export default function StrengthTrainingApp() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
+      {/* DE ECHTE FIX VOOR IPHONE SILENT MODE: 
+         De video moet in de DOM staan (niet via createElement).
+         De playsInline en loop zijn cruciaal.
+         We verbergen hem visueel met styles.
+      */}
+      <video 
+        ref={silentVideoRef} 
+        loop 
+        playsInline 
+        muted={false}
+        src="data:video/mp4;base64,AAAAHGZ0eXBpc29tAAAAAGlzb21hdmMxbWV0YQAAACRocmRyAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAcY3mN0AAAAAAQAAAAEAAAABAAAAAQAAAAEAAAAB"
+        style={{ position: 'absolute', width: 1, height: 1, opacity: 0.01, pointerEvents: 'none' }}
+      />
+
       <div className="bg-white/95 backdrop-blur rounded-lg shadow-2xl p-4 sm:p-8 max-w-2xl w-full">
         
         {/* Voortgang Sectie */}
@@ -379,14 +449,16 @@ export default function StrengthTrainingApp() {
             <span className="text-sm font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent uppercase">Set {currentSet + 1} van {numSets}</span>
           </div>
           <h1 className="text-2xl sm:text-4xl font-bold text-gray-800 mb-2 leading-tight">
-            {pauseType ? (pauseType === 'set' ? 'Rust tussen Sets' : 'Rust tussen Oefeningen') : exercise.name}
+            {/* HIER GEWISSELD: Toon ALTIJD de naam van de (volgende) oefening, ook tijdens rust */}
+            {pauseType ? EXERCISES[currentExercise].name : exercise.name}
           </h1>
         </div>
 
         {pauseType ? (
           <div className="text-center py-8">
             <div className="text-7xl sm:text-8xl font-black bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent mb-4 font-mono">{formatTime(pauseTimer)}</div>
-            <p className="text-gray-500 font-medium">Volgende: {pauseType === 'set' ? 'Nieuwe Set' : EXERCISES[currentExercise].name}</p>
+            {/* Hier staat nu klein 'rust' in plaats van groot */}
+            <p className="text-gray-500 font-medium">{pauseType === 'set' ? 'Rust tussen Sets' : 'Even uitrusten...'}</p>
           </div>
         ) : (
           <div className="text-center mb-8">
@@ -406,12 +478,22 @@ export default function StrengthTrainingApp() {
 
         <div className="flex items-center justify-center gap-4 mb-6">
           <button onClick={skipToPrevious} disabled={currentExercise === 0 && currentSet === 0} className="bg-gray-100 hover:bg-gray-200 disabled:opacity-30 text-gray-600 w-14 h-14 rounded-xl flex items-center justify-center transition-all shadow-sm border border-gray-200"><SkipBack className="w-6 h-6" /></button>
-          <button onClick={togglePause} className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:scale-105 text-white w-20 h-20 rounded-2xl flex items-center justify-center transition-all shadow-lg">{isPaused ? <Play className="w-10 h-10 fill-current" /> : <Pause className="w-10 h-10 fill-current" />}</button>
+          
+          {/* Pause knop is w-20 h-20 in mijn eerdere ontwerp, maar w-14 h-14 in jouw code. Ik maak hem w-20 voor betere touch target, en pas Abort daarop aan */}
+          <button onClick={togglePause} className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:scale-105 text-white w-20 h-20 rounded-2xl flex items-center justify-center transition-all shadow-lg">
+             {isPaused ? <Play className="w-10 h-10 fill-current" /> : <Pause className="w-10 h-10 fill-current" />}
+          </button>
+          
           <button onClick={skipToNext} disabled={currentExercise === EXERCISES.length - 1 && currentSet === numSets - 1} className="bg-gray-100 hover:bg-gray-200 disabled:opacity-30 text-gray-600 w-14 h-14 rounded-xl flex items-center justify-center transition-all shadow-sm border border-gray-200"><SkipForward className="w-6 h-6" /></button>
         </div>
 
         {isPaused && (
-          <button onClick={abortTraining} className="w-full bg-red-50 hover:bg-red-100 text-red-600 font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all border border-red-100"><Square className="w-5 h-5 fill-current" /> Training Afbreken</button>
+          // Abort knop: gecentreerd, even groot als Play/Pause (w-20 h-20), geen tekst
+          <div className="flex justify-center">
+             <button onClick={abortTraining} className="bg-red-50 hover:bg-red-100 text-red-600 w-20 h-20 rounded-2xl flex items-center justify-center transition-all border border-red-100 shadow-md">
+               <Square className="w-8 h-8 fill-current" />
+             </button>
+          </div>
         )}
       </div>
     </div>
